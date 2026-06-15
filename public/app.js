@@ -967,11 +967,6 @@ async function handleGuessSubmit(event) {
     focusGuessInput();
     return;
   }
-  if (isBlockedWord(term)) {
-    setMessage("That word is not allowed here.", "error");
-    focusGuessInput();
-    return;
-  }
   if (term === previous) {
     setMessage(`${term} is already your current word. Try a different step.`, "error");
     focusGuessInput();

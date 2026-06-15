@@ -34,17 +34,32 @@ test("daily worker cron covers Pacific midnight in daylight and standard time", 
   expect(isPacificMidnight("2026-12-10T08:00:00Z")).toBe(true);
 });
 
-test("scheduled daily puzzles all have cached hard paths", () => {
+test("scheduled daily puzzles all have cached bot paths without blocked words", async () => {
+  const blockedWords = new Set(
+    JSON.parse(await readFile("public/data/blocked-words.json", "utf8")).words,
+  );
+
   for (const [date, start, target, gap, easyPath, hardPath] of DAILY_PUZZLES) {
     expect(gap, `${date} gap`).toBeGreaterThan(0);
     expect(Array.isArray(easyPath), `${date} easy path`).toBeTruthy();
     expect(Array.isArray(hardPath), `${date} hard path`).toBeTruthy();
+    expect(blockedWords.has(start), `${date} blocked start word ${start}`).toBeFalsy();
+    expect(blockedWords.has(target), `${date} blocked target word ${target}`).toBeFalsy();
     expect(easyPath[0], `${date} easy path start`).toBe(start);
     expect(easyPath.at(-1), `${date} easy path target`).toBe(target);
     expect(easyPath.length, `${date} easy path length`).toBeLessThanOrEqual(11);
     expect(hardPath[0], `${date} hard path start`).toBe(start);
     expect(hardPath.at(-1), `${date} hard path target`).toBe(target);
     expect(hardPath.length, `${date} hard path length`).toBeLessThanOrEqual(11);
+
+    for (const [label, path] of [
+      ["easy", easyPath],
+      ["hard", hardPath],
+    ]) {
+      for (const word of path) {
+        expect(blockedWords.has(word), `${date} ${label} path blocked word ${word}`).toBeFalsy();
+      }
+    }
   }
 });
 
@@ -260,14 +275,15 @@ test("rejects guesses outside the dictionary", async ({ page }) => {
   await expect(page.locator(".path-row")).toHaveCount(1);
 });
 
-test("rejects blocked words", async ({ page }) => {
+test("allows submitted blocked words", async ({ page }) => {
   await page.goto("/?mockModel=1&start=cat&target=dog&gap=1");
 
   await page.locator("#guessInput").fill("sexuality");
   await page.getByRole("button", { name: "Try word" }).click();
 
-  await expect(page.locator("#message")).toContainText("not allowed");
-  await expect(page.locator(".path-row")).toHaveCount(1);
+  await expect(page.locator("#message")).toContainText("Accepted");
+  await expect(page.locator("#startWord")).toHaveText("sexuality");
+  await expect(page.locator(".path-row")).toHaveCount(2);
 });
 
 test("ends after ten accepted non-target steps", async ({ page }) => {
