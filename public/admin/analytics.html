@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>The Relating Game Analytics</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #171a1f;
+        --muted: #5c6470;
+        --border: #d7dce3;
+        --accent: #226f54;
+        --danger: #a33d32;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111418;
+          --panel: #181d23;
+          --text: #f2f4f7;
+          --muted: #a7b0bd;
+          --border: #303844;
+          --accent: #4fb286;
+          --danger: #df776d;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+
+      header,
+      main {
+        width: min(1440px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      h2 {
+        font-size: 18px;
+      }
+
+      .muted,
+      label {
+        color: var(--muted);
+      }
+
+      .toolbar,
+      .metrics,
+      .layout {
+        display: grid;
+        gap: 12px;
+      }
+
+      .toolbar {
+        grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(120px, 0.5fr)) auto;
+        align-items: end;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+      }
+
+      input,
+      button {
+        min-height: 40px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font: inherit;
+      }
+
+      input {
+        width: 100%;
+        padding: 8px 10px;
+        background: var(--panel);
+        color: var(--text);
+      }
+
+      button {
+        padding: 8px 14px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+
+      .status {
+        min-height: 24px;
+        margin: 12px 0;
+        color: var(--muted);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .metrics {
+        grid-template-columns: repeat(6, minmax(130px, 1fr));
+        margin-bottom: 12px;
+      }
+
+      .metric,
+      section {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .metric {
+        padding: 14px;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 24px;
+      }
+
+      .layout {
+        grid-template-columns: 380px 1fr;
+        align-items: start;
+      }
+
+      section {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .list,
+      .table-wrap {
+        max-height: 640px;
+        overflow: auto;
+      }
+
+      .session {
+        display: grid;
+        gap: 6px;
+        width: 100%;
+        min-height: auto;
+        padding: 12px 16px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .session.active {
+        border-left: 4px solid var(--accent);
+        padding-left: 12px;
+      }
+
+      .session strong,
+      .session code {
+        overflow-wrap: anywhere;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--panel);
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      td {
+        max-width: 280px;
+        overflow-wrap: anywhere;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      @media (max-width: 1000px) {
+        .toolbar,
+        .layout,
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>The Relating Game Analytics</h1>
+      <p class="muted">Private dashboard. Analytics reads require the owner token.</p>
+    </header>
+
+    <main>
+      <form class="toolbar" id="controls">
+        <label>
+          Owner token
+          <input id="token" type="password" autocomplete="current-password" required>
+        </label>
+        <label>
+          End date
+          <input id="date" type="date" required>
+        </label>
+        <label>
+          Days
+          <input id="days" type="number" min="1" max="31" value="1" required>
+        </label>
+        <label>
+          Events
+          <input id="limit" type="number" min="1" max="5000" value="1000" required>
+        </label>
+        <button id="load" type="submit">Load</button>
+      </form>
+
+      <p class="status" id="status">Enter the owner token and load analytics.</p>
+
+      <div class="metrics" id="metrics"></div>
+
+      <div class="layout">
+        <section>
+          <div class="section-head">
+            <h2>Sessions</h2>
+            <span class="muted" id="sessionCount">0</span>
+          </div>
+          <div class="list" id="sessions"></div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Events</h2>
+            <span class="muted" id="eventCount">0</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Session</th>
+                  <th>Event</th>
+                  <th>Puzzle</th>
+                  <th>Action</th>
+                  <th>Path</th>
+                  <th>Context</th>
+                </tr>
+              </thead>
+              <tbody id="events"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const tokenInput = document.querySelector("#token");
+      const dateInput = document.querySelector("#date");
+      const daysInput = document.querySelector("#days");
+      const limitInput = document.querySelector("#limit");
+      const form = document.querySelector("#controls");
+      const loadButton = document.querySelector("#load");
+      const statusLine = document.querySelector("#status");
+      const metrics = document.querySelector("#metrics");
+      const sessionsNode = document.querySelector("#sessions");
+      const eventsNode = document.querySelector("#events");
+      const sessionCount = document.querySelector("#sessionCount");
+      const eventCount = document.querySelector("#eventCount");
+
+      let activeSession = "";
+      let currentData = null;
+
+      dateInput.value = new Date().toISOString().slice(0, 10);
+      tokenInput.value = sessionStorage.getItem("relating-analytics-token") || "";
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await loadAnalytics();
+      });
+
+      async function loadAnalytics() {
+        const token = tokenInput.value.trim();
+        if (!token) return setStatus("Owner token is required.", true);
+
+        sessionStorage.setItem("relating-analytics-token", token);
+        loadButton.disabled = true;
+        setStatus("Loading analytics.");
+
+        const params = new URLSearchParams({
+          date: dateInput.value,
+          days: daysInput.value,
+          includeEvents: "1",
+          limit: limitInput.value,
+        });
+
+        try {
+          const response = await fetch(`/api/analytics?${params}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `Request failed: ${response.status}`);
+          currentData = data;
+          activeSession = "";
+          render(data);
+          setStatus(`Loaded ${data.eventCount} events across ${data.sessionCount} sessions.`);
+        } catch (error) {
+          setStatus(error.message || "Could not load analytics.", true);
+        } finally {
+          loadButton.disabled = false;
+        }
+      }
+
+      function render(data) {
+        renderMetrics(data);
+        renderSessions(data.sessions || []);
+        renderEvents(data.events || []);
+      }
+
+      function renderMetrics(data) {
+        const winRate = data.games.total
+          ? `${Math.round((data.games.won / data.games.total) * 100)}%`
+          : "-";
+        const acceptedRate = data.guesses.total
+          ? `${Math.round((data.guesses.accepted / data.guesses.total) * 100)}%`
+          : "-";
+        const values = [
+          ["Events", data.eventCount],
+          ["Sessions", data.sessionCount],
+          ["Guesses", data.guesses.total],
+          ["Accepted", acceptedRate],
+          ["Games", data.games.total],
+          ["Win rate", winRate],
+          ["Avg steps", data.games.averageSteps ?? "-"],
+          ["Shares", data.shares],
+          ["Avg load", data.appReady.averageLoadMs ? `${data.appReady.averageLoadMs}ms` : "-"],
+          ["Mobile", data.devices.mobile],
+          ["Desktop", data.devices.desktop],
+          ["Top word", topKey(data.words.submitted) || "-"],
+        ];
+        metrics.replaceChildren(...values.map(([label, value]) => metric(label, value)));
+      }
+
+      function metric(label, value) {
+        const node = document.createElement("div");
+        node.className = "metric";
+        node.innerHTML = `<span></span><strong></strong>`;
+        node.querySelector("span").textContent = label;
+        node.querySelector("strong").textContent = String(value);
+        return node;
+      }
+
+      function renderSessions(sessions) {
+        sessionCount.textContent = String(sessions.length);
+        sessionsNode.replaceChildren(
+          ...sessions.map((session) => {
+            const node = document.createElement("button");
+            node.type = "button";
+            node.className = `session ${session.sessionId === activeSession ? "active" : ""}`;
+            node.innerHTML = `
+              <strong></strong>
+              <span class="muted"></span>
+              <code></code>
+              <span class="muted"></span>
+            `;
+            node.querySelector("strong").textContent =
+              `${session.lastEvent || "event"} - ${session.eventCount} events`;
+            node.querySelectorAll("span")[0].textContent =
+              `${formatTime(session.lastAt)} - ${session.kind || "-"} - ${session.mode || "-"}`;
+            node.querySelector("code").textContent = session.sessionId;
+            node.querySelectorAll("span")[1].textContent =
+              [
+                session.city,
+                session.region,
+                session.country,
+                session.guesses.total ? `${session.guesses.total} guesses` : "",
+              ]
+                .filter(Boolean)
+                .join(" - ") || "No location";
+            node.addEventListener("click", () => {
+              activeSession = activeSession === session.sessionId ? "" : session.sessionId;
+              render(currentData);
+            });
+            return node;
+          }),
+        );
+      }
+
+      function renderEvents(events) {
+        const visible = activeSession
+          ? events.filter((event) => event.sessionId === activeSession)
+          : events;
+        eventCount.textContent = String(visible.length);
+        eventsNode.replaceChildren(
+          ...visible.map((event) => {
+            const row = document.createElement("tr");
+            const action = [
+              event.outcome,
+              event.result,
+              event.reason,
+              event.submittedWord ? `word: ${event.submittedWord}` : "",
+              Number.isFinite(event.stepGap) ? `move: ${event.stepGap}` : "",
+              Number.isFinite(event.targetGap) ? `target: ${event.targetGap}` : "",
+            ]
+              .filter(Boolean)
+              .join(" - ");
+            const context = [
+              event.country,
+              event.region,
+              event.city,
+              event.ipHash ? `ip: ${event.ipHash}` : "",
+              event.viewportWidth ? `${event.viewportWidth}x${event.viewportHeight}` : "",
+              event.referrer || "",
+              event.userAgent || "",
+            ]
+              .filter(Boolean)
+              .join(" - ");
+            appendCell(row, formatTime(event.at));
+            appendCell(row, event.sessionId || "");
+            appendCell(row, event.type);
+            appendCell(row, `${event.kind || "-"} ${event.mode || "-"} ${event.puzzleDate || ""}`);
+            appendCell(row, action || "-");
+            appendCell(row, Array.isArray(event.path) ? event.path.join(" -> ") : "-");
+            appendCell(row, context || "-");
+            return row;
+          }),
+        );
+      }
+
+      function appendCell(row, text) {
+        const cell = document.createElement("td");
+        cell.textContent = text;
+        row.append(cell);
+      }
+
+      function setStatus(text, isError = false) {
+        statusLine.textContent = text;
+        statusLine.classList.toggle("error", isError);
+      }
+
+      function formatTime(value) {
+        if (!value) return "-";
+        return new Date(value).toLocaleString();
+      }
+
+      function topKey(record) {
+        return Object.entries(record || {}).sort((left, right) => right[1] - left[1])[0]?.[0] || "";
+      }
+    </script>
+  </body>
+</html>

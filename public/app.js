@@ -157,15 +157,27 @@ function analyticsSessionId() {
 
 function analyticsContext(details = {}) {
   const steps = currentRecord ? Math.max(0, currentRecord.path.length - 1) : 0;
+  const currentPath = currentRecord?.path || [];
   return {
     sessionId: analyticsSessionId(),
     kind: currentPuzzle?.kind || storage.kind,
     mode: storage.mode,
     puzzleDate: currentPuzzle?.date || "",
     stepCount: steps,
-    pathLength: currentRecord?.path.length || 0,
+    pathLength: currentPath.length,
     gap: currentPuzzle?.gap,
     done: Boolean(currentRecord?.done),
+    startWord: currentPuzzle?.start || "",
+    targetWord: currentPuzzle?.target || "",
+    currentWord: currentPath.at(-1) || currentPuzzle?.start || "",
+    pagePath: `${window.location.pathname}${window.location.search}`,
+    language: navigator.language || "",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    timezoneOffset: new Date().getTimezoneOffset(),
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    screenWidth: window.screen?.width,
+    screenHeight: window.screen?.height,
     ...details,
   };
 }
@@ -196,6 +208,7 @@ function trackPuzzleView() {
     resumed: Boolean(currentRecord && currentRecord.path.length > 1),
     hasEasySolution: Boolean(getCachedRelateBotSolution("easy")),
     hasHardSolution: Boolean(getCachedRelateBotSolution("hard")),
+    path: currentRecord?.path || [],
   });
 }
 
@@ -1022,25 +1035,43 @@ async function handleGuessSubmit(event) {
 
   if (!isWordShape(term)) {
     setMessage("Use one word, 2 to 15 letters.", "error");
-    trackEvent("guess", { outcome: "rejected", reason: "invalid_shape" });
+    trackEvent("guess", { outcome: "rejected", reason: "invalid_shape", path: currentRecord.path });
     focusGuessInput();
     return;
   }
   if (!dictionary.has(term)) {
     setMessage("That word is not in the word list.", "error");
-    trackEvent("guess", { outcome: "rejected", reason: "missing_dictionary" });
+    trackEvent("guess", {
+      outcome: "rejected",
+      reason: "missing_dictionary",
+      submittedWord: term,
+      previousWord: previous,
+      path: currentRecord.path,
+    });
     focusGuessInput();
     return;
   }
   if (term === previous) {
     setMessage(`${term} is already your current word. Try a different step.`, "error");
-    trackEvent("guess", { outcome: "rejected", reason: "repeat_current" });
+    trackEvent("guess", {
+      outcome: "rejected",
+      reason: "repeat_current",
+      submittedWord: term,
+      previousWord: previous,
+      path: currentRecord.path,
+    });
     focusGuessInput();
     return;
   }
   if (currentRecord.path.includes(term)) {
     setMessage(`${term} is already in your path. Use each word once.`, "error");
-    trackEvent("guess", { outcome: "rejected", reason: "duplicate_path" });
+    trackEvent("guess", {
+      outcome: "rejected",
+      reason: "duplicate_path",
+      submittedWord: term,
+      previousWord: previous,
+      path: currentRecord.path,
+    });
     focusGuessInput();
     return;
   }
@@ -1064,8 +1095,11 @@ async function handleGuessSubmit(event) {
       trackEvent("guess", {
         outcome: "rejected",
         reason: "too_far",
+        submittedWord: term,
+        previousWord: previous,
         stepGap: stepScore.gap,
         targetGap: targetScore.gap,
+        path: currentRecord.path,
       });
       return;
     }
@@ -1082,8 +1116,11 @@ async function handleGuessSubmit(event) {
     elements.guessInput.value = "";
     trackEvent("guess", {
       outcome: "accepted",
+      submittedWord: term,
+      previousWord: previous,
       stepGap: stepScore.gap,
       targetGap: targetScore.gap,
+      path: currentRecord.path,
     });
 
     if (term === currentPuzzle.target) {
@@ -1107,7 +1144,13 @@ async function handleGuessSubmit(event) {
     }
   } catch (error) {
     setMessage(error.message || "Could not score that step.", "error");
-    trackEvent("guess", { outcome: "rejected", reason: "score_error" });
+    trackEvent("guess", {
+      outcome: "rejected",
+      reason: "score_error",
+      submittedWord: term,
+      previousWord: previous,
+      path: currentRecord.path,
+    });
   } finally {
     setBusy(false);
     focusGuessInput();
@@ -1318,7 +1361,7 @@ function finishGame(status, message) {
     stats.best = stats.best === null ? steps : Math.min(stats.best, steps);
   }
   setMessage(message, status === "won" ? "success" : "error");
-  trackEvent("game_end", { result: status, stepCount: steps });
+  trackEvent("game_end", { result: status, stepCount: steps, path: currentRecord.path });
 }
 
 function showResult() {
@@ -1337,7 +1380,10 @@ async function giveUp() {
 }
 
 function resetCurrentGame() {
-  trackEvent("reset", { stepCount: Math.max(0, currentRecord.path.length - 1) });
+  trackEvent("reset", {
+    stepCount: Math.max(0, currentRecord.path.length - 1),
+    path: currentRecord.path,
+  });
   currentRecord = createEmptyRecord();
   persistRecord();
   setMessage("Puzzle reset.");
@@ -1348,7 +1394,10 @@ function resetCurrentGame() {
 
 function undoStep() {
   if (currentRecord.done || currentRecord.path.length <= 1) return;
-  trackEvent("undo", { stepCount: Math.max(0, currentRecord.path.length - 1) });
+  trackEvent("undo", {
+    stepCount: Math.max(0, currentRecord.path.length - 1),
+    path: currentRecord.path,
+  });
   currentRecord.path.pop();
   currentRecord.scores.pop();
   persistRecord();
@@ -1535,6 +1584,7 @@ async function shareCurrentResult() {
   trackEvent("share", {
     result: currentRecord.status,
     stepCount: Math.max(0, currentRecord.path.length - 1),
+    path: currentRecord.path,
   });
   try {
     await navigator.clipboard.writeText(text);

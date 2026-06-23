@@ -256,7 +256,7 @@ test("plays a mocked puzzle through to completion", async ({ page }) => {
   );
 });
 
-test("sends aggregate gameplay analytics without submitted words", async ({ page }) => {
+test("sends detailed gameplay analytics after player actions", async ({ page }) => {
   const events = [];
   await page.route("**/api/analytics", async (route) => {
     events.push(JSON.parse(route.request().postData() || "{}"));
@@ -273,7 +273,11 @@ test("sends aggregate gameplay analytics without submitted words", async ({ page
       events.some((event) => event.type === "guess" && event.outcome === "accepted"),
     )
     .toBe(true);
-  expect(JSON.stringify(events)).not.toContain("bridge");
+  const guessEvent = events.find((event) => event.type === "guess" && event.outcome === "accepted");
+  expect(guessEvent.submittedWord).toBe("bridge");
+  expect(guessEvent.previousWord).toBe("cat");
+  expect(guessEvent.targetWord).toBe("dog");
+  expect(guessEvent.path).toEqual(["cat", "bridge"]);
   expect(events.every((event) => event.sessionId && event.mode && event.kind)).toBe(true);
 });
 
@@ -540,7 +544,13 @@ test("loads the daily puzzle from the server API", async ({ page, request }) => 
   await expect(page.locator("#guessInput")).toBeFocused();
 });
 
-test("records and summarizes analytics events", async ({ request }) => {
+test("keeps analytics reads private", async ({ request }) => {
+  const response = await request.get(`/api/analytics?date=${pacificDateId()}`);
+
+  expect(response.status()).toBe(401);
+});
+
+test("records and summarizes detailed analytics events for the owner", async ({ request }) => {
   const today = pacificDateId();
   const sessionId = randomUUID();
   const response = await request.post("/api/analytics", {
@@ -554,6 +564,14 @@ test("records and summarizes analytics events", async ({ request }) => {
       stepCount: 1,
       stepGap: 0.2,
       targetGap: 0.5,
+      startWord: "cat",
+      targetWord: "dog",
+      previousWord: "cat",
+      submittedWord: "bridge",
+      path: ["cat", "bridge"],
+      pagePath: "/?mockModel=1&start=cat&target=dog&gap=1",
+      viewportWidth: 1200,
+      viewportHeight: 800,
     },
   });
   expect(response.status()).toBe(204);
@@ -561,7 +579,10 @@ test("records and summarizes analytics events", async ({ request }) => {
   await expect
     .poll(async () => {
       const summaryResponse = await request.get(
-        `/api/analytics?date=${today}&sessionId=${sessionId}`,
+        `/api/analytics?date=${today}&sessionId=${sessionId}&includeEvents=1`,
+        {
+          headers: { Authorization: "Bearer local-dev-analytics-token" },
+        },
       );
       expect(summaryResponse.ok()).toBeTruthy();
       const summary = await summaryResponse.json();
@@ -569,9 +590,19 @@ test("records and summarizes analytics events", async ({ request }) => {
         events: summary.eventCount,
         accepted: summary.guesses.accepted,
         sessions: summary.sessionCount,
+        word: summary.words.submitted.bridge,
+        eventWord: summary.events[0]?.submittedWord,
+        path: summary.events[0]?.path,
       };
     })
-    .toEqual({ events: 1, accepted: 1, sessions: 1 });
+    .toEqual({
+      events: 1,
+      accepted: 1,
+      sessions: 1,
+      word: 1,
+      eventWord: "bridge",
+      path: ["cat", "bridge"],
+    });
 });
 
 test("returns dictionary word vectors through the Pages Function", async ({ request }) => {
