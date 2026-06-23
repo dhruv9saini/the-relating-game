@@ -5,3 +5,7 @@ pages_build_output_dir = "public"
 [[kv_namespaces]]
 binding = "DAILY_PUZZLES"
 id = "8d45875c978547af9e4ed14006e39e14"
+
+[[kv_namespaces]]
+binding = "ANALYTICS"
+id = "d2ba3b0974834e9b85ccfa39d0018fef"

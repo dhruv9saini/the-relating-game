@@ -7,7 +7,9 @@ const LEXICON_URL = "./data/lexicon.json";
 const MANIFEST_URL = "./data/manifest.json";
 const PUZZLE_API_URL = "./api/puzzle";
 const EMBED_API_URL = "./api/embed";
+const ANALYTICS_API_URL = "./api/analytics";
 const STORAGE_KEY = "the-relating-game:v3";
+const ANALYTICS_SESSION_KEY = "the-relating-game:analytics-session";
 const SHARE_SITE = "relating-game.pages.dev";
 const START_DATE = "2026-06-10";
 const MAX_STEPS = 10;
@@ -22,6 +24,8 @@ const MIN_PAIR_GAP = 0.86;
 const MAX_PAIR_GAP = 0.94;
 const TEST_PARAMS = new URLSearchParams(window.location.search);
 const USE_MOCK_MODEL = TEST_PARAMS.has("mockModel");
+const DISABLE_ANALYTICS = TEST_PARAMS.has("noAnalytics");
+const appStartedAt = performance.now();
 
 const elements = {
   bootScreen: document.querySelector("#bootScreen"),
@@ -134,6 +138,65 @@ function mergeStorage(base, value) {
 
 function saveStorage() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
+}
+
+function analyticsSessionId() {
+  try {
+    let id = sessionStorage.getItem(ANALYTICS_SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(ANALYTICS_SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return "";
+  }
+}
+
+function analyticsContext(details = {}) {
+  const steps = currentRecord ? Math.max(0, currentRecord.path.length - 1) : 0;
+  return {
+    sessionId: analyticsSessionId(),
+    kind: currentPuzzle?.kind || storage.kind,
+    mode: storage.mode,
+    puzzleDate: currentPuzzle?.date || "",
+    stepCount: steps,
+    pathLength: currentRecord?.path.length || 0,
+    gap: currentPuzzle?.gap,
+    done: Boolean(currentRecord?.done),
+    ...details,
+  };
+}
+
+function trackEvent(type, details = {}) {
+  if (DISABLE_ANALYTICS) return;
+
+  const body = JSON.stringify({
+    type,
+    ...analyticsContext(details),
+  });
+
+  if (navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    if (navigator.sendBeacon(ANALYTICS_API_URL, blob)) return;
+  }
+
+  fetch(ANALYTICS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: body.length < 60000,
+  }).catch(() => {});
+}
+
+function trackPuzzleView() {
+  trackEvent("puzzle_view", {
+    resumed: Boolean(currentRecord && currentRecord.path.length > 1),
+    hasEasySolution: Boolean(getCachedRelateBotSolution("easy")),
+    hasHardSolution: Boolean(getCachedRelateBotSolution("hard")),
+  });
 }
 
 function applyStartupRoute() {
@@ -959,21 +1022,25 @@ async function handleGuessSubmit(event) {
 
   if (!isWordShape(term)) {
     setMessage("Use one word, 2 to 15 letters.", "error");
+    trackEvent("guess", { outcome: "rejected", reason: "invalid_shape" });
     focusGuessInput();
     return;
   }
   if (!dictionary.has(term)) {
     setMessage("That word is not in the word list.", "error");
+    trackEvent("guess", { outcome: "rejected", reason: "missing_dictionary" });
     focusGuessInput();
     return;
   }
   if (term === previous) {
     setMessage(`${term} is already your current word. Try a different step.`, "error");
+    trackEvent("guess", { outcome: "rejected", reason: "repeat_current" });
     focusGuessInput();
     return;
   }
   if (currentRecord.path.includes(term)) {
     setMessage(`${term} is already in your path. Use each word once.`, "error");
+    trackEvent("guess", { outcome: "rejected", reason: "duplicate_path" });
     focusGuessInput();
     return;
   }
@@ -994,6 +1061,12 @@ async function handleGuessSubmit(event) {
         )}, max ${moveLimit.toFixed(2)}. No move used.`,
         "error",
       );
+      trackEvent("guess", {
+        outcome: "rejected",
+        reason: "too_far",
+        stepGap: stepScore.gap,
+        targetGap: targetScore.gap,
+      });
       return;
     }
 
@@ -1007,6 +1080,11 @@ async function handleGuessSubmit(event) {
       at: new Date().toISOString(),
     });
     elements.guessInput.value = "";
+    trackEvent("guess", {
+      outcome: "accepted",
+      stepGap: stepScore.gap,
+      targetGap: targetScore.gap,
+    });
 
     if (term === currentPuzzle.target) {
       finishGame("won", "Solved.");
@@ -1029,6 +1107,7 @@ async function handleGuessSubmit(event) {
     }
   } catch (error) {
     setMessage(error.message || "Could not score that step.", "error");
+    trackEvent("guess", { outcome: "rejected", reason: "score_error" });
   } finally {
     setBusy(false);
     focusGuessInput();
@@ -1239,6 +1318,7 @@ function finishGame(status, message) {
     stats.best = stats.best === null ? steps : Math.min(stats.best, steps);
   }
   setMessage(message, status === "won" ? "success" : "error");
+  trackEvent("game_end", { result: status, stepCount: steps });
 }
 
 function showResult() {
@@ -1257,6 +1337,7 @@ async function giveUp() {
 }
 
 function resetCurrentGame() {
+  trackEvent("reset", { stepCount: Math.max(0, currentRecord.path.length - 1) });
   currentRecord = createEmptyRecord();
   persistRecord();
   setMessage("Puzzle reset.");
@@ -1267,6 +1348,7 @@ function resetCurrentGame() {
 
 function undoStep() {
   if (currentRecord.done || currentRecord.path.length <= 1) return;
+  trackEvent("undo", { stepCount: Math.max(0, currentRecord.path.length - 1) });
   currentRecord.path.pop();
   currentRecord.scores.pop();
   persistRecord();
@@ -1404,6 +1486,7 @@ async function loadPuzzle() {
     revealRelateBotSolution();
   }
   focusGuessInput();
+  trackPuzzleView();
 }
 
 function queuePuzzleLoad() {
@@ -1449,6 +1532,10 @@ function newRandomPuzzle() {
 async function shareCurrentResult() {
   if (!currentRecord.done) return;
   const text = buildShareText();
+  trackEvent("share", {
+    result: currentRecord.status,
+    stepCount: Math.max(0, currentRecord.path.length - 1),
+  });
   try {
     await navigator.clipboard.writeText(text);
     elements.shareResult.textContent = "Copied";
@@ -1507,6 +1594,7 @@ async function init() {
     setStatus("Ready", "ready");
     setBootProgress(100, "Ready.");
     hideBoot();
+    trackEvent("app_ready", { loadMs: Math.round(performance.now() - appStartedAt) });
   } catch (error) {
     setStatus("Error", "error");
     setMessage(error.message || "Could not prepare the puzzle.", "error");

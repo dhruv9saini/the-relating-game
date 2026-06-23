@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
@@ -253,6 +254,27 @@ test("plays a mocked puzzle through to completion", async ({ page }) => {
   await expect(page.locator("#shareText")).toHaveValue(
     /The Relating Game \d{2}\/\d{2}\/\d{4} \| Hard 2\/10 \| relating-game\.pages\.dev/,
   );
+});
+
+test("sends aggregate gameplay analytics without submitted words", async ({ page }) => {
+  const events = [];
+  await page.route("**/api/analytics", async (route) => {
+    events.push(JSON.parse(route.request().postData() || "{}"));
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto("/?mockModel=1&start=cat&target=dog&gap=1");
+  await page.locator("#guessInput").fill("bridge");
+  await page.getByRole("button", { name: "Try word" }).click();
+
+  await expect.poll(() => events.some((event) => event.type === "puzzle_view")).toBe(true);
+  await expect
+    .poll(() =>
+      events.some((event) => event.type === "guess" && event.outcome === "accepted"),
+    )
+    .toBe(true);
+  expect(JSON.stringify(events)).not.toContain("bridge");
+  expect(events.every((event) => event.sessionId && event.mode && event.kind)).toBe(true);
 });
 
 test("rejects a semantic distance over the selected limit", async ({ page }) => {
@@ -516,6 +538,40 @@ test("loads the daily puzzle from the server API", async ({ page, request }) => 
     `Starting distance: ${puzzle.gap.toFixed(2)}`,
   );
   await expect(page.locator("#guessInput")).toBeFocused();
+});
+
+test("records and summarizes analytics events", async ({ request }) => {
+  const today = pacificDateId();
+  const sessionId = randomUUID();
+  const response = await request.post("/api/analytics", {
+    data: {
+      type: "guess",
+      sessionId,
+      kind: "daily",
+      mode: "easy",
+      puzzleDate: today,
+      outcome: "accepted",
+      stepCount: 1,
+      stepGap: 0.2,
+      targetGap: 0.5,
+    },
+  });
+  expect(response.status()).toBe(204);
+
+  await expect
+    .poll(async () => {
+      const summaryResponse = await request.get(
+        `/api/analytics?date=${today}&sessionId=${sessionId}`,
+      );
+      expect(summaryResponse.ok()).toBeTruthy();
+      const summary = await summaryResponse.json();
+      return {
+        events: summary.eventCount,
+        accepted: summary.guesses.accepted,
+        sessions: summary.sessionCount,
+      };
+    })
+    .toEqual({ events: 1, accepted: 1, sessions: 1 });
 });
 
 test("returns dictionary word vectors through the Pages Function", async ({ request }) => {
